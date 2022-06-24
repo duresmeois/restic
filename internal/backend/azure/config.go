@@ -11,10 +11,11 @@ import (
 // Config contains all configuration necessary to connect to an azure compatible
 // server.
 type Config struct {
-	AccountName string
-	AccountKey  string
-	Container   string
-	Prefix      string
+	ContainerSas string
+	AccountName  string
+	AccountKey   string
+	Container    string
+	Prefix       string
 
 	Connections uint `option:"connections" help:"set a limit for the number of concurrent connections (default: 5)"`
 }

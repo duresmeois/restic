@@ -7,6 +7,7 @@ import (
 	"hash"
 	"io"
 	"net/http"
+	url2 "net/url"
 	"os"
 	"path"
 	"strings"
@@ -39,23 +40,26 @@ var _ restic.Backend = &Backend{}
 
 func open(cfg Config, rt http.RoundTripper) (*Backend, error) {
 	debug.Log("open, config %#v", cfg)
-
-	client, err := storage.NewBasicClient(cfg.AccountName, cfg.AccountKey)
-	if err != nil {
-		return nil, errors.Wrap(err, "NewBasicClient")
-	}
-
-	client.HTTPClient = &http.Client{Transport: rt}
-
-	service := client.GetBlobService()
-
+	httpClient := &http.Client{Transport: rt}
 	sem, err := sema.New(cfg.Connections)
 	if err != nil {
 		return nil, err
 	}
 
+	var getContainer = func(cfg Config) (*storage.Container, error) {
+		if cfg.ContainerSas != "" {
+			return GetContainerWithSas(cfg)
+		}
+		return getContainerWithAccountKey(cfg, httpClient)
+	}
+
+	container, err := getContainer(cfg)
+	if err != nil {
+		return nil, errors.Wrap(err, "NewBasicClient")
+	}
+
 	be := &Backend{
-		container:   service.GetContainerReference(cfg.Container),
+		container:   container,
 		accountName: cfg.AccountName,
 		connections: cfg.Connections,
 		sem:         sem,
@@ -68,6 +72,21 @@ func open(cfg Config, rt http.RoundTripper) (*Backend, error) {
 	}
 
 	return be, nil
+}
+
+func getContainerWithAccountKey(cfg Config, httpClient *http.Client) (*storage.Container, error) {
+	client, err := storage.NewBasicClient(cfg.AccountName, cfg.AccountKey)
+	if err != nil {
+		return nil, errors.Wrap(err, "NewBasicClient")
+	}
+	client.HTTPClient = httpClient
+	var service = client.GetBlobService()
+	return service.GetContainerReference(cfg.Container), nil
+}
+
+func GetContainerWithSas(cfg Config) (*storage.Container, error) {
+	var url, _ = url2.Parse(cfg.ContainerSas)
+	return storage.GetContainerReferenceFromSASURI(*url)
 }
 
 // Open opens the Azure backend at specified container.
